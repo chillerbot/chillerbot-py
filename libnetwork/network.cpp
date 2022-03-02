@@ -145,6 +145,7 @@ void Connect(const char *pIp, int Port)
 		dbg_msg("libtwnetwork", "could not find the address of %s, connecting to localhost", pIp);
 		net_host_lookup("localhost", &g_ServerAddr, g_Socket.type);
 	}
+	g_ServerAddr.port = Port;
 }
 
 void Send(CNetPacketConstruct *pPacket)
