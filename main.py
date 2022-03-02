@@ -1,30 +1,28 @@
 #!/usr/bin/env python3
 
-import socket
 import ctypes
 
 lib = ctypes.cdll.LoadLibrary('./libtwnetwork.so')
-lib.hell()
+class NETADDR(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("ip", ctypes.c_char * 16),
+        ("port", ctypes.c_short),
+        ("reserved", ctypes.c_short)
+    ]
 
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 8303
+class CNetPacketConstruct(ctypes.Structure):
+    _fields_ = [
+        ("token", ctypes.c_uint),
+        ("response_token", ctypes.c_uint),
+        ("flags", ctypes.c_int),
+        ("ack", ctypes.c_int),
+        ("num_chunks", ctypes.c_int),
+        ("data_size", ctypes.c_int),
+        ("chunk_data", ctypes.c_ubyte * 1391)
+    ]
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+addr_str = ctypes.create_string_buffer(b"127.0.0.1")
+lib.Connect(ctypes.pointer(addr_str), 8303)
 
-class CNetPacketConstruct():
-    def __init__(self):
-        self.token = 0
-        self.response_token = 0
-        self.flags = 0
-        self.ack = 0
-        self.num_chunks = 0
-        self.data_size = 0
-        self.chunk_data = b"foo"
-
-def SendPacket(packet: CNetPacketConstruct):
-    buf = packet.chunk_data
-    sock.sendto(buf, (SERVER_IP, SERVER_PORT))
-
-
-pck = CNetPacketConstruct()
-SendPacket(pck)
+lib.SendSample()
