@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 import socket
+import ctypes
+
+lib = ctypes.cdll.LoadLibrary('./libtwnetwork.so')
+lib.hell()
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8303
