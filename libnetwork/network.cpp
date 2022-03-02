@@ -17,7 +17,7 @@ unsigned char g_aRequestTokenBuf[NET_TOKENREQUEST_DATASIZE];
 void init_network()
 {
 	NETADDR BindAddr;
-	net_host_lookup("", &BindAddr, NETTYPE_ALL);
+	net_host_lookup("127.0.0.1", &BindAddr, NETTYPE_ALL);
 	g_Socket = net_udp_create(BindAddr, 0);
 	g_Huffman.Init(0);
 	mem_zero(g_aRequestTokenBuf, sizeof(g_aRequestTokenBuf));
@@ -46,7 +46,7 @@ int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size
 			d = sendto((int)sock.ipv4sock, (const char*)data, size, 0, (struct sockaddr *)&sa, sizeof(sa));
 		}
 		else
-			dbg_msg("net", "can't sent ipv4 traffic to this socket");
+			dbg_msg("net", "can't sent ipv4 traffic to this socket socket=%d", sock.ipv4sock);
 	}
 
 	if(addr->type&NETTYPE_IPV6)
@@ -76,17 +76,17 @@ int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size
 		dbg_msg("net", "can't sent to network of type %d", addr->type);
 		*/
 
-	/*if(d < 0)
+	if(d < 0)
 	{
 		char addrstr[256];
-		net_addr_str(addr, addrstr, sizeof(addrstr));
+		net_addr_str(addr, addrstr, sizeof(addrstr), true);
 
 		dbg_msg("net", "sendto error (%d '%s')", errno, strerror(errno));
 		dbg_msg("net", "\tsock = %d %x", sock, sock);
 		dbg_msg("net", "\tsize = %d %x", size, size);
 		dbg_msg("net", "\taddr = %s", addrstr);
+	}
 
-	}*/
 	return d;
 }
 
@@ -130,6 +130,8 @@ void SendPacket(const NETADDR *pAddr, CNetPacketConstruct *pPacket)
 
 		net_udp_send(g_Socket, pAddr, aBuffer, FinalSize);
 	}
+	else
+		dbg_msg("libtwnetwork", "Could not send packet with FinalSize=%d", FinalSize);
 }
 
 extern "C" {
