@@ -13,3 +13,8 @@ Compile the teeworlds network library
 Run the python script
 
     python main.py
+
+### debug c segfaults
+
+    make debug
+    gdb -ex=run --args python main.py

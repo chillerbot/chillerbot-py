@@ -90,6 +90,24 @@ int str_length(const char *str)
 	return (int)strlen(str);
 }
 
+void str_append(char *dst, const char *src, int dst_size)
+{
+	int s;
+	int i = 0;
+	// dbg_assert(dst_size > 0, "dst_size invalid");
+	s = str_length(dst);
+	while(s < dst_size)
+	{
+		dst[s] = src[i];
+		if(!src[i]) /* check for null termination */
+			break;
+		s++;
+		i++;
+	}
+
+	dst[dst_size-1] = 0; /* assure null termination */
+}
+
 void str_format(char *buffer, int buffer_size, const char *format, ...)
 {
 	va_list ap;
@@ -104,6 +122,154 @@ void str_format(char *buffer, int buffer_size, const char *format, ...)
 	va_end(ap);
 
 	buffer[buffer_size-1] = 0; /* assure null termination */
+}
+
+/* case */
+int str_comp_nocase(const char *a, const char *b)
+{
+#if defined(CONF_FAMILY_WINDOWS) && !defined(__GNUC__)
+	return _stricmp(a,b);
+#else
+	return strcasecmp(a,b);
+#endif
+}
+
+int str_comp_nocase_num(const char *a, const char *b, const int num)
+{
+#if defined(CONF_FAMILY_WINDOWS) && !defined(__GNUC__)
+	return _strnicmp(a, b, num);
+#else
+	return strncasecmp(a, b, num);
+#endif
+}
+
+int str_comp(const char *a, const char *b)
+{
+	return strcmp(a, b);
+}
+
+int str_comp_num(const char *a, const char *b, const int num)
+{
+	return strncmp(a, b, num);
+}
+
+const char *str_startswith_nocase(const char *str, const char *prefix)
+{
+	int prefixl = str_length(prefix);
+	if(str_comp_nocase_num(str, prefix, prefixl) == 0)
+	{
+		return str + prefixl;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+const char *str_startswith(const char *str, const char *prefix)
+{
+	int prefixl = str_length(prefix);
+	if(str_comp_num(str, prefix, prefixl) == 0)
+	{
+		return str + prefixl;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+const char *str_endswith_nocase(const char *str, const char *suffix)
+{
+	int strl = str_length(str);
+	int suffixl = str_length(suffix);
+	const char *strsuffix;
+	if(strl < suffixl)
+	{
+		return 0;
+	}
+	strsuffix = str + strl - suffixl;
+	if(str_comp_nocase(strsuffix, suffix) == 0)
+	{
+		return strsuffix;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+const char *str_endswith(const char *str, const char *suffix)
+{
+	int strl = str_length(str);
+	int suffixl = str_length(suffix);
+	const char *strsuffix;
+	if(strl < suffixl)
+	{
+		return 0;
+	}
+	strsuffix = str + strl - suffixl;
+	if(str_comp(strsuffix, suffix) == 0)
+	{
+		return strsuffix;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+const char *str_find_nocase(const char *haystack, const char *needle)
+{
+	while(*haystack) /* native implementation */
+	{
+		const char *a = haystack;
+		const char *b = needle;
+		while(*a && *b && tolower(*a) == tolower(*b))
+		{
+			a++;
+			b++;
+		}
+		if(!(*b))
+			return haystack;
+		haystack++;
+	}
+
+	return 0;
+}
+
+
+const char *str_find(const char *haystack, const char *needle)
+{
+	while(*haystack) /* native implementation */
+	{
+		const char *a = haystack;
+		const char *b = needle;
+		while(*a && *b && *a == *b)
+		{
+			a++;
+			b++;
+		}
+		if(!(*b))
+			return haystack;
+		haystack++;
+	}
+
+	return 0;
+}
+
+void str_hex(char *dst, int dst_size, const void *data, int data_size)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	int b;
+
+	for(b = 0; b < data_size && b < dst_size/4-4; b++)
+	{
+		dst[b*3] = hex[((const unsigned char *)data)[b]>>4];
+		dst[b*3+1] = hex[((const unsigned char *)data)[b]&0xf];
+		dst[b*3+2] = ' ';
+		dst[b*3+3] = 0;
+	}
 }
 
 #define FORMAT_TIME "%H:%M:%S"

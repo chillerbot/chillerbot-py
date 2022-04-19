@@ -90,6 +90,35 @@ int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size
 	return d;
 }
 
+
+int net_udp_recv(NETSOCKET sock, NETADDR *addr, void *data, int maxsize)
+{
+	char sockaddrbuf[128];
+	socklen_t fromlen;// = sizeof(sockaddrbuf);
+	int bytes = 0;
+
+	if(sock.ipv4sock >= 0)
+	{
+		fromlen = sizeof(struct sockaddr_in);
+		bytes = recvfrom(sock.ipv4sock, (char*)data, maxsize, 0, (struct sockaddr *)&sockaddrbuf, &fromlen);
+	}
+
+	if(bytes <= 0 && sock.ipv6sock >= 0)
+	{
+		fromlen = sizeof(struct sockaddr_in6);
+		bytes = recvfrom(sock.ipv6sock, (char*)data, maxsize, 0, (struct sockaddr *)&sockaddrbuf, &fromlen);
+	}
+
+	if(bytes > 0)
+	{
+		sockaddr_to_netaddr((struct sockaddr *)&sockaddrbuf, addr);
+		return bytes;
+	}
+	else if(bytes == 0)
+		return 0;
+	return -1; /* error */
+}
+
 void SendPacket(const NETADDR *pAddr, CNetPacketConstruct *pPacket)
 {
 	unsigned char aBuffer[NET_MAX_PACKETSIZE];
@@ -165,6 +194,126 @@ void SendSample()
 	Construct.m_aChunkData[0] = NET_CTRLMSG_TOKEN;
 
 	SendPacket(&g_ServerAddr, &Construct);
+}
+
+void UnpackPacket()
+{
+	CNetPacketConstruct Packet;
+	CNetPacketConstruct *pPacket = &Packet;
+	NETADDR Addr;
+	NETADDR *pAddr = &Addr;
+	unsigned char pBuffer[NET_MAX_PACKETSIZE];
+	int Size = net_udp_recv(g_Socket, pAddr, pBuffer, NET_MAX_PACKETSIZE);
+	if(Size <= 0)
+		return;
+
+	if(Size < NET_PACKETHEADERSIZE || Size > NET_MAX_PACKETSIZE)
+	{
+		dbg_msg("network", "packet too small, size=%d", Size);
+		return;
+	}
+
+	pPacket->m_Flags = (pBuffer[0]&0xfc)>>2;
+
+	// FFFFFFxx
+	if(pPacket->m_Flags&NET_PACKETFLAG_CONNLESS)
+	{
+		if(Size < NET_PACKETHEADERSIZE_CONNLESS)
+		{
+			dbg_msg("net", "connless packet too small, size=%d", Size);
+			return;
+		}
+
+		pPacket->m_Flags = NET_PACKETFLAG_CONNLESS;
+		pPacket->m_Ack = 0;
+		pPacket->m_NumChunks = 0;
+		int Version = pBuffer[0]&0x3;
+		// xxxxxxVV
+
+		if(Version != NET_PACKETVERSION)
+			return;
+
+		pPacket->m_DataSize = Size - NET_PACKETHEADERSIZE_CONNLESS;
+		pPacket->m_Token = (pBuffer[1] << 24) | (pBuffer[2] << 16) | (pBuffer[3] << 8) | pBuffer[4];
+		// TTTTTTTT TTTTTTTT TTTTTTTT TTTTTTTT
+		pPacket->m_ResponseToken = (pBuffer[5]<<24) | (pBuffer[6]<<16) | (pBuffer[7]<<8) | pBuffer[8];
+		// RRRRRRRR RRRRRRRR RRRRRRRR RRRRRRRR
+		mem_copy(pPacket->m_aChunkData, &pBuffer[NET_PACKETHEADERSIZE_CONNLESS], pPacket->m_DataSize);
+	}
+	else
+	{
+		if(Size - NET_PACKETHEADERSIZE > NET_MAX_PAYLOAD)
+		{
+			dbg_msg("network", "packet payload too big, size=%d", Size);
+			return;
+		}
+
+		pPacket->m_Ack = ((pBuffer[0]&0x3)<<8) | pBuffer[1];
+			// xxxxxxAA AAAAAAAA
+		pPacket->m_NumChunks = pBuffer[2];
+			// NNNNNNNN
+
+		pPacket->m_DataSize = Size - NET_PACKETHEADERSIZE;
+		pPacket->m_Token = (pBuffer[3] << 24) | (pBuffer[4] << 16) | (pBuffer[5] << 8) | pBuffer[6];
+			// TTTTTTTT TTTTTTTT TTTTTTTT TTTTTTTT
+		pPacket->m_ResponseToken = NET_TOKEN_NONE;
+
+		if(pPacket->m_Flags&NET_PACKETFLAG_COMPRESSION)
+			pPacket->m_DataSize = g_Huffman.Decompress(&pBuffer[NET_PACKETHEADERSIZE], pPacket->m_DataSize, pPacket->m_aChunkData, sizeof(pPacket->m_aChunkData));
+		else
+			mem_copy(pPacket->m_aChunkData, &pBuffer[NET_PACKETHEADERSIZE], pPacket->m_DataSize);
+	}
+
+	// check for errors
+	if(pPacket->m_DataSize < 0)
+	{
+		dbg_msg("network", "error during packet decoding");
+		return;
+	}
+
+	// set the response token (a bit hacky because this function shouldn't know about control packets)
+	if(pPacket->m_Flags&NET_PACKETFLAG_CONTROL)
+	{
+		if(pPacket->m_DataSize >= 5) // control byte + token
+		{
+			if(pPacket->m_aChunkData[0] == NET_CTRLMSG_CONNECT
+				|| pPacket->m_aChunkData[0] == NET_CTRLMSG_TOKEN)
+			{
+				pPacket->m_ResponseToken = (pPacket->m_aChunkData[1]<<24) | (pPacket->m_aChunkData[2]<<16)
+					| (pPacket->m_aChunkData[3]<<8) | pPacket->m_aChunkData[4];
+			}
+		}
+	}
+
+	// chiller debug start
+	char aAddrStr[NETADDR_MAXSTRSIZE];
+	net_addr_str(pAddr, aAddrStr, sizeof(aAddrStr), true);
+	if(str_startswith(aAddrStr, "[0:0:0:0:0:0:0:1]:") || str_startswith(aAddrStr, "127.0.0.1:"))
+	{
+		char aFlags[512];
+		aFlags[0] = '\0';
+		if(pPacket->m_Flags&NET_PACKETFLAG_CONTROL)
+			str_append(aFlags, "CONTROL", sizeof(aFlags));
+		if(pPacket->m_Flags&NET_PACKETFLAG_RESEND)
+			str_append(aFlags, aFlags[0] ? "|RESEND" : "RESEND", sizeof(aFlags));
+		if(pPacket->m_Flags&NET_PACKETFLAG_COMPRESSION)
+			str_append(aFlags, aFlags[0] ? "|COMPRESSION" : "COMPRESSION", sizeof(aFlags));
+		if(pPacket->m_Flags&NET_PACKETFLAG_CONNLESS)
+			str_append(aFlags, aFlags[0] ? "|CONNLESS" : "CONNLESS", sizeof(aFlags));
+		char aBuf[512];
+		aBuf[0] = '\0';
+		if(aFlags[0])
+			str_format(aBuf, sizeof(aBuf), " (%s)", aFlags);
+		char aHexData[1024];
+		str_hex(aHexData, sizeof(aHexData), pPacket->m_aChunkData, pPacket->m_DataSize);
+		char aRawData[1024];
+		for(int i = 0; i < pPacket->m_DataSize; i++)
+			aRawData[i] = pPacket->m_aChunkData[i] < 32 ? '.' : pPacket->m_aChunkData[i];
+		dbg_msg("network", "%s size=%d flags=%d%s", aAddrStr, Size, pPacket->m_Flags, aBuf);
+		dbg_msg("network", "  data: %s", aHexData);
+		dbg_msg("network", "  data_raw: %s", aRawData);
+	}
+	// chiller debug end
 }
 
 }

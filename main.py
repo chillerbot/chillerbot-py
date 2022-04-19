@@ -26,3 +26,6 @@ addr_str = ctypes.create_string_buffer(b"127.0.0.1")
 lib.Connect(ctypes.pointer(addr_str), 8303)
 
 lib.SendSample()
+
+while True:
+    lib.UnpackPacket()
