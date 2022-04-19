@@ -196,21 +196,16 @@ void SendSample()
 	SendPacket(&g_ServerAddr, &Construct);
 }
 
-void UnpackPacket()
+int UnpackPacket(NETADDR *pAddr, unsigned char *pBuffer, CNetPacketConstruct *pPacket)
 {
-	CNetPacketConstruct Packet;
-	CNetPacketConstruct *pPacket = &Packet;
-	NETADDR Addr;
-	NETADDR *pAddr = &Addr;
-	unsigned char pBuffer[NET_MAX_PACKETSIZE];
 	int Size = net_udp_recv(g_Socket, pAddr, pBuffer, NET_MAX_PACKETSIZE);
 	if(Size <= 0)
-		return;
+		return 1;
 
 	if(Size < NET_PACKETHEADERSIZE || Size > NET_MAX_PACKETSIZE)
 	{
 		dbg_msg("network", "packet too small, size=%d", Size);
-		return;
+		return -1;
 	}
 
 	pPacket->m_Flags = (pBuffer[0]&0xfc)>>2;
@@ -221,7 +216,7 @@ void UnpackPacket()
 		if(Size < NET_PACKETHEADERSIZE_CONNLESS)
 		{
 			dbg_msg("net", "connless packet too small, size=%d", Size);
-			return;
+			return -1;
 		}
 
 		pPacket->m_Flags = NET_PACKETFLAG_CONNLESS;
@@ -231,7 +226,7 @@ void UnpackPacket()
 		// xxxxxxVV
 
 		if(Version != NET_PACKETVERSION)
-			return;
+			return -1;
 
 		pPacket->m_DataSize = Size - NET_PACKETHEADERSIZE_CONNLESS;
 		pPacket->m_Token = (pBuffer[1] << 24) | (pBuffer[2] << 16) | (pBuffer[3] << 8) | pBuffer[4];
@@ -245,7 +240,7 @@ void UnpackPacket()
 		if(Size - NET_PACKETHEADERSIZE > NET_MAX_PAYLOAD)
 		{
 			dbg_msg("network", "packet payload too big, size=%d", Size);
-			return;
+			return -1;
 		}
 
 		pPacket->m_Ack = ((pBuffer[0]&0x3)<<8) | pBuffer[1];
@@ -268,7 +263,7 @@ void UnpackPacket()
 	if(pPacket->m_DataSize < 0)
 	{
 		dbg_msg("network", "error during packet decoding");
-		return;
+		return -1;
 	}
 
 	// set the response token (a bit hacky because this function shouldn't know about control packets)
@@ -314,6 +309,61 @@ void UnpackPacket()
 		dbg_msg("network", "  data_raw: %s", aRawData);
 	}
 	// chiller debug end
+	return 0;
+}
+
+// CNetRecvUnpacker::m_Data
+CNetPacketConstruct g_Data;
+// CNetRecvUnpacker::m_aBuffer
+unsigned char g_aBuffer[NET_MAX_PACKETSIZE];
+
+
+int FetchChunk(CNetChunk *pChunk)
+{
+	CNetChunkHeader Header;
+	unsigned char *pEnd = g_Data.m_aChunkData + g_Data.m_DataSize;
+	while(1)
+	{
+		unsigned char *pData = g_Data.m_aChunkData;
+
+		// TODO: this is incomplete
+		pData = Header.Unpack(pData);
+		return 0;
+	}
+	return 0;
+}
+
+int Recv(CNetChunk *pChunk, TOKEN *pResponseToken)
+{
+	while(1)
+	{
+		// check for a chunk
+		if(FetchChunk(pChunk))
+			return 1;
+
+		NETADDR Addr;
+		unsigned char aBuffer[NET_MAX_PACKETSIZE];
+		int Result = UnpackPacket(&Addr, g_aBuffer, &g_Data);
+		// no more packets for now
+		if(Result > 0)
+			break;
+
+		if(!Result)
+		{
+			return 0; // TODO: implement this
+		}
+	}
+	return 0;
+}
+
+void PumpNetwork()
+{
+	CNetChunk Packet;
+	while(Recv(&Packet, 0))
+	{
+		// if(!(Packet.m_Flags&NETSENDFLAG_CONNLESS))
+		// 	ProcessServerPacket(&Packet);
+	}
 }
 
 }

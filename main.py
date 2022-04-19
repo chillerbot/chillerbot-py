@@ -28,4 +28,4 @@ lib.Connect(ctypes.pointer(addr_str), 8303)
 lib.SendSample()
 
 while True:
-    lib.UnpackPacket()
+    lib.PumpNetwork()

@@ -148,8 +148,30 @@ public:
 	int m_Size;
 	int m_Sequence;
 
-	unsigned char *Pack(unsigned char *pData);
-	unsigned char *Unpack(unsigned char *pData);
+	unsigned char *Pack(unsigned char *pData)
+	{
+		pData[0] = ((m_Flags&0x03)<<6) | ((m_Size>>6)&0x3F);
+		pData[1] = (m_Size&0x3F);
+		if(m_Flags&NET_CHUNKFLAG_VITAL)
+		{
+			pData[1] |= (m_Sequence>>2)&0xC0;
+			pData[2] = m_Sequence&0xFF;
+			return pData + 3;
+		}
+		return pData + 2;
+	}
+	unsigned char *Unpack(unsigned char *pData)
+	{
+		m_Flags = (pData[0]>>6)&0x03;
+		m_Size = ((pData[0]&0x3F)<<6) | (pData[1]&0x3F);
+		m_Sequence = -1;
+		if(m_Flags&NET_CHUNKFLAG_VITAL)
+		{
+			m_Sequence = ((pData[1]&0xC0)<<2) | pData[2];
+			return pData + 3;
+		}
+		return pData + 2;
+	}
 };
 
 class CNetChunkResend
